@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en" data-ready="0">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>3-Sides Planner — JOURNAL</title>
+
+  <!-- Require login for this page (auth.js will handle redirect) -->
+  <meta name="auth" content="required">
+
+  <!-- 1) FOUC guard -->
+  <style>
+    html:not([data-ready="1"]) {
+      visibility: hidden
+    }
+  </style>
+
+  <!-- 2) Base paint so Safari/Chrome UI bars don’t flash the wrong color -->
+  <style>
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+      background: var(--bg-color, #fff) !important;
+      color: var(--text-color, #111) !important;
+    }
+  </style>
+
+  <!-- PWA + will be kept in sync with your theme by JS -->
+  <!-- Absolute (good for GitHub Pages) -->
+  <link rel="manifest" href="manifest.webmanifest?v=27">
+  <meta name="theme-color" content="#6a5acd">
+  <meta name="color-scheme" content="dark light">
+  
+  <!-- Favicons -->
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/three-sides.io/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/three-sides.io/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/three-sides.io/favicon-16.png">
+  <link rel="apple-touch-icon" href="/three-sides.io/icon-192.png"> <!-- iOS Home screen -->
+  
+  <!-- Fonts & CSS (non-blocking) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
+
+  <link rel="preload" href="style.css" as="style" onload="this.rel='stylesheet'">
+
+  <noscript>
+    <link rel="stylesheet" href="style.css">
+  </noscript>
+
+  <link rel="preload" href="mainTheme.css" as="style" onload="this.rel='stylesheet'">
+
+  <noscript>
+    <link rel="stylesheet" href="mainTheme.css">
+  </noscript>
+
+  <!-- Early Theme Boot: apply saved theme instantly + sync theme-color (fixes Safari bar color) -->
+  <script>
+    (function () {
+      try {
+        const root = document.documentElement;
+        const userKey = localStorage.getItem("currentUser") || "anon";
+        const savedTheme =
+          localStorage.getItem(userKey + ":themeClass") ||
+          localStorage.getItem("themeClass") ||
+          localStorage.getItem("themeClass:last") ||
+          "theme-original";
+
+        // Keep non-theme classes; swap only theme-*
+        const keep = (root.className || "")
+          .split(/\s+/).filter(Boolean).filter(c => !c.startsWith("theme-"));
+        root.className = [...keep, savedTheme].join(" ");
+
+        // Sync Safari/Chrome UI bars to your CSS variable
+        let meta = document.querySelector('meta[name="theme-color"]');
+        if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+        const cs = getComputedStyle(root);
+        meta.content = (cs.getPropertyValue('--accent-color') ||
+          cs.getPropertyValue('--accent') ||
+          '#6a5acd').trim() || '#6a5acd';
+      } catch { }
+    })();
+  </script>
+
+  <!-- SW + Auth gate (non-blocking) -->
+  <script src="sw-register.js" defer></script>
+  <script type="module" src="auth.js"></script>
+
+  <!-- ===== Page-local styles continue here ===== -->
+  <style>
+    html,
+    body {
+      scroll-behavior: smooth;
+      overscroll-behavior-y: contain;
+      /* or 'none' if needed */
+    }
+
+    /* journal text container */
+    .entry {
+      position: relative !important;
+      padding: 1rem 2.5rem 1rem 1rem !important;
+      /* Add more right padding */
+      background-color: rgb(250, 230, 250) !important;
+      border-radius: 1rem !important;
+      max-width: 95% !important;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+      font-size: 1rem !important;
+      line-height: 1.4 !important;
+      word-wrap: break-word !important;
+      color: black !important;
+    }
+
+    /* delete button */
+    .delete-button {
+      position: absolute !important;
+      top: 0.7rem !important;
+      right: 1rem !important;
+      background: transparent !important;
+      border: none !important;
+      font-size: 1.2rem !important;
+      cursor: pointer !important;
+      color: #d33 !important;
+      transition: transform 0.2s ease !important;
+    }
+
+    .delete-button:hover {
+      transform: scale(1.2) !important;
+    }
+
+    .three-d-title {
+      font-family: 'Open Sans', sans-serif;
+      font-size: 2.2rem;
+      font-weight: bold;
+      text-align: center;
+      text-shadow: 2px 2px rgba(0, 0, 0, 0.2);
+      color: var(--text-color) !important;
+      /* ← THIS is what you want */
+    }
+
+    .three-d-title.white-title {
+      color: white !important;
+      padding: 2rem 2.5rem 0rem 1rem !important;
+      /* Add more right padding */
+
+    }
+
+    /* sparkle */
+    .sparkle-effect {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .sparkle {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0%, transparent 70%);
+      border-radius: 50%;
+      opacity: 0;
+      animation: sparkle-twinkle 4s infinite ease-in-out;
+      pointer-events: none;
+      z-index: 2;
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+    }
+
+    @keyframes sparkle-twinkle {
+
+      0%,
+      100% {
+        opacity: 0.1;
+        transform: scale(0.6);
+      }
+
+      50% {
+        opacity: 1;
+        transform: scale(1.4);
+      }
+    }
+
+    /* text area */
+    textarea#journalEntry {
+      width: 80%;
+      padding: 1rem;
+      font-size: 1rem;
+      line-height: 1.5;
+      /* This gives room for the text to breathe */
+      border-radius: 1rem;
+      border: 1px solid rgba(69, 111, 179, 0.903);
+      background-color: rgb(250, 230, 250) !important;
+      box-sizing: border-box;
+    }
+
+    .black-button {
+      background-color: #000 !important;
+      color: #fff !important;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      border-radius: 0.75rem;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    .black-button:hover {
+      background-color: #222 !important;
+    }
+
+    /* journal box stying to make X have more room */
+    .entry {
+      position: relative;
+      padding: 1rem .01rem .01rem 1rem;
+      /* add right-side padding */
+      background-color: white;
+      border-radius: 1rem;
+      max-width: 95%;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      font-size: 1rem;
+      line-height: .06;
+      word-wrap: break-word;
+    }
+
+    /* -------------------- JOURNAL PAGE -------------------- */
+    body.journal-page .container {
+      margin-top: 1rem;
+      padding-top: 0.5rem;
+    }
+
+    /* Journal input field */
+    textarea {
+      width: 95%;
+      height: 100px;
+      font-size: 1.1rem;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      border: 2px solid #ccc;
+      margin-bottom: 1rem;
+    }
+
+    /* Save button */
+    button {
+      padding: 0.7rem 1.5rem;
+      font-size: 1rem;
+      background-color: rgb(107, 228, 157);
+      border: none;
+      border-radius: 0.5rem;
+      color: black;
+      cursor: pointer;
+    }
+
+    .bubble-box {
+      font-family: 'Comic Neue', sans-serif;
+      background: linear-gradient(to bottom, #0e1f6c, #e15eb6, #0e168a);
+      border-radius: 2rem;
+      padding: 2rem;
+      /* increased padding */
+      margin: 2rem auto;
+      max-width: 300px;
+      /* smaller width */
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
+      text-align: center;
+      color: white !important;
+      border: 2px solid purple;
+      font-size: 1rem;
+      /* you can tweak this if you want */
+    }
+
+    /* dreamy background on journal.html behind entries and text */
+    /* Journal Entry Container - match toolkit dreamy look */
+    /* Saved journal entry style */
+    .entry {
+      background-color: white;
+      padding: 0.75rem;
+      border-radius: 0.75rem;
+      margin-top: 1rem;
+      position: relative;
+      border-left: 8px solid rgb(15, 46, 131);
+      border-top: 3px solid rgb(57, 54, 210);
+    }
+
+    .entry time {
+      display: block;
+      font-size: 0.9rem;
+      color: rgba(26, 24, 28, 0.698);
+      margin-bottom: 0.5rem;
+    }
+
+    #entryList {
+      padding-bottom: 0.05rem !important;
+    }
+
+    /* Entry Timestamp */
+    .entry time {
+      display: block;
+      font-size: 0.9rem;
+      color: #607d8b;
+      margin-bottom: 0.5rem;
+    }
+
+    .full-width-wrapper {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(145deg, #e0f7fa, #fdfcdc);
+      display: flex;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+
+    .full-journal-box {
+      width: 100%;
+      margin-left: calc(-50vw + 50%);
+      padding-left: 1rem;
+      padding-right: 1rem;
+      background: linear-gradient(to bottom, #fff9b0, #cceeff, #fff9b0);
+      /* match toolkit */
+      box-sizing: border-box;
+    }
+
+    .gradient-section-box {
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(to bottom, #89cbd4, rgb(40, 130, 180), #89cbd4);
+      z-index: -1;
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      min-height: 100vh;
+    }
+
+    .gradient-section-box {
+      min-height: 100%;
+    }
+
+    .bottom-wrapper {
+      width: 100%;
+      margin: 0;
+      padding: 2rem 1rem;
+      background: linear-gradient(to bottom, #fff9b0, #cceeff, #fff9b0);
+      /* Match toolkit */
+      display: flex;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+
+    .journal-entries-box {
+      width: 100%;
+      max-width: 600px;
+      background: white;
+      border-radius: 1.5rem;
+      padding: 2rem;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+      border-top: 3px solid rgba(40, 130, 180, 0.2);
+      border-bottom: 3px solid rgba(40, 130, 180, 0.2);
+      box-sizing: border-box;
+      text-align: center;
+    }
+
+    .full-journal-wrapper {
+      width: 100vw;
+      margin: 0;
+      padding: 0 1rem;
+      background: linear-gradient(to bottom, #fff9b0, #cceeff, #fff9b0);
+      /* matches existing */
+      box-sizing: border-box;
+    }
+
+    .full-journal-box {
+      max-width: 100%;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.5rem;
+      box-sizing: border-box;
+    }
+
+    body.journal-page {
+      margin: 0;
+      padding: 0;
+      font-family: 'Patrick Hand', sans-serif;
+      background: #e0f7fa;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* Top Section (Title, Intro, Save Box) */
+    .top-section {
+      max-width: 800px;
+      margin: 2rem auto;
+      text-align: center;
+      padding: 1rem;
+    }
+
+    /* Bottom Section (Entries Box) */
+    .bottom-section {
+      background: linear-gradient(to bottom, #89cbd4, rgb(40, 130, 180), #89cbd4);
+      flex-grow: 1;
+      width: 100%;
+      padding: 2rem 1rem;
+      box-sizing: border-box;
+      border-top-left-radius: 1.5rem;
+      border-top-right-radius: 1.5rem;
+    }
+
+    /* Entries Box (just one container inside) */
+    .entries-box {
+      background: white;
+      border-radius: 1rem;
+      padding: 1rem;
+      max-width: 800px;
+      margin: 0 auto;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Journal Textarea */
+    textarea {
+      width: 80%;
+      max-width: 700px;
+      height: 100px;
+      font-size: 1.1rem;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      border: 2px solid #ccc;
+      margin: 0 auto 1rem auto;
+      display: block;
+    }
+
+    /* Button */
+    button {
+      padding: 0.7rem 1.5rem;
+      font-size: 1rem;
+      border-radius: 0.5rem;
+      border: none;
+      background-color: #468faf;
+      color: white;
+      cursor: pointer;
+      margin-top: 1rem;
+    }
+
+    .bottom-journal-section {
+      width: 100vw;
+      margin: 0;
+      padding: 0.5rem 1rem 0rem 1rem;
+      /* top, right, bottom, left */
+      background-color: rgb(3, 3, 82);
+      box-sizing: border-box;
+    }
+
+    .bottom-journal-section {
+      flex-grow: 1;
+      width: 100%;
+      padding: 4rem .5rem;
+      box-sizing: border-box;
+
+    }
+
+    /* Entry container */
+    .journal-entries-box {
+      max-width: 700px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 0rem;
+      padding: 2rem;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+      text-align: left;
+    }
+
+    /* Entry timestamp */
+    .entry time {
+      display: block;
+      font-size: 0.9rem;
+      color: #607d8b;
+      margin-bottom: 0.5rem;
+    }
+
+    .torn-paper-divider {
+      width: 100%;
+      height: 60px;
+      background-color: rgb(19, 19, 124);
+      background-size: cover;
+      margin: 0;
+      padding: 0;
+      transform: rotate(180deg);
+      /* optional, depending on your direction */
+    }
+
+    .bottom-journal-section h1 {
+      margin-top: 0 !important;
+      margin-bottom: 1 !important;
+    }
+
+    .bottom-journal-section {
+      padding-top: 0.5rem;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 0 1rem;
+        box-sizing: border-box;
+      }
+    }
+
+    /* --------------------- Mobile-safe media query -------------------- */
+    @media (max-width: 600px) {
+      .image-text-box {
+        width: 100%;
+        max-width: 100%;
+        margin-left: 0;
+        margin-right: 0;
+        border-radius: 0;
+        padding: 1rem 0.75rem;
+        text-align: left;
+        /* optional: center if you prefer */
+      }
+
+      .hero-image {
+        width: 100%;
+        height: auto;
+        display: block;
+        margin: 0 auto;
+      }
+
+      .hero-caption,
+      .image-text-box p {
+        font-size: 1rem;
+        line-height: 1.4;
+      }
+    }
+
+    .entry {
+      background: #fff;
+      margin: 1rem 0;
+      padding: 1rem;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+
+/* ================== bottom-nav for navbar ================ */
+/* Full-height layout + bottom space for footer */
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            box-sizing: border-box;
+            width: 100%;
+            padding-bottom: 4rem;
+            /* room for bottom nav */
+        }
+
+/* ===================== update - text color, in container - to black ================= */
+/* Form fields: force readable black text across Chrome & Safari */
+input, textarea, select, [contenteditable="true"] {
+  color: #111 !important;             /* normal text */
+  -webkit-text-fill-color: #111 !important; /* WebKit inner text (Chrome/Safari) */
+  caret-color: #111;                  /* cursor color */
+  background-color: #f6dff1;          /* your light pink; tweak if needed */
+}
+
+/* Placeholders (Safari needs explicit color + opacity=1 to show) */
+input::placeholder,
+textarea::placeholder {
+  color: rgba(0,0,0,.55);
+  opacity: 1;
+}
+
+/* Autofill (prevents Chrome’s yellow + keeps text black) */
+input:-webkit-autofill,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: #111 !important;
+  box-shadow: 0 0 0px 1000px #f6dff1 inset;  /* match background */
+  transition: background-color 9999s ease-in-out 0s; /* suppress flash */
+}
+
+  </style>
+</head>
+
+<body>
+  <br>
+  <!-- Top journal section -->
+  <div class="top-journal-section">
+
+    <div class="bubble-box sparkle-effect" style="color: rgb(19, 25, 97);">
+      <b>Journaling with bipolar isn’t just helpful — it’s powerful - </b>
+    </div>
+
+    <div class="entry-list" id="journalEntries"></div>
+    <div class="feel-good-container">
+      <textarea id="journalEntry" placeholder="Write your thoughts here..."></textarea>
+      <button onclick="saveJournalEntry()" class="icon-button">💾 Save</button>
+      <a href="pet.html"><button class="icon-button">🐾 My Pet</button></a>
+      <br><br><br>
+    </div>
+
+    <!-- Bottom teal gradient section -->
+    <div class="bottom-journal-section">
+      <h1 class="three-d-title white-title">🖊️ Journal Entries</h1>
+      <div id="entryList"></div>
+
+    </div>
+
+    <!-- ✂️ Moved outside the blue box -->
+    <div style="text-align: center; margin-top: 1rem; margin-bottom: 3rem;">
+      <a href="toolkit-hub.html" class="backToApp"
+        style="color: var(--text-color); font-weight: bold; font-size: 1.2rem;">← Back</a>
+    </div>
+
+    <footer class="bottom-nav">
+      <a href="index.html" class="nav-icon">🏠<span>Home</span></a>
+      <a href="toolkit-hub.html" class="nav-icon">🧰<span>Toolkit</span></a>
+      <a href="wellness.html" class="nav-icon">💖<span>Wellness</span></a>
+      <a href="pet.html" class="nav-icon">🐾<span>Pet</span></a>
+      <a href="important-numbers.html" class="nav-icon">🆘<span>Help</span></a>
+    </footer>
+
+    <!-- Firebase-only auth gate, fast theme, live journal -->
+    <script type="module">
+      import { auth, db } from "./firebase-init.js";
+      import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+      import {
+        doc, onSnapshot, collection, addDoc, deleteDoc, getDoc, setDoc,
+        query, orderBy, serverTimestamp, increment
+      } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+      // ---------- fast reveal + theme ----------
+      const reveal = () => (document.documentElement.style.visibility = "visible");
+      const safety = setTimeout(reveal, 2000);
+
+      function applyThemeClass(themeClass) {
+        const root = document.documentElement;
+        const next = themeClass || "theme-original";
+        (root.className.match(/\btheme-[^\s]+/g) || []).forEach(c => root.classList.remove(c));
+        root.classList.add(next);
+        try {
+          localStorage.setItem("themeClass", next);
+          localStorage.setItem("themeClass:last", next);
+        } catch { }
+      }
+
+      const ymdLocal = (d = new Date()) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+      // ---------- DOM ----------
+      const txt = document.getElementById("journalEntry");
+      const list = document.getElementById("entryList");
+      const esc = (s = "") => s
+        .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+
+      let uid = null, unsubTheme = null, unsubEntries = null;
+
+      // ---------- badges ----------
+      async function ensureBadge(userId, id, label, emoji) {
+        const bRef = doc(db, "users", userId, "badges", id);
+        if (!(await getDoc(bRef)).exists()) {
+          await setDoc(bRef, { key: id, label, emoji, earnedAt: serverTimestamp() });
+        }
+      }
+
+      // ---------- helper: unlock feeding only when appropriate ----------
+      async function flagCanFeedToday(userId) {
+        const petRef = doc(db, "users", userId, "pet", "state");
+        const today = ymdLocal();
+
+        const snap = await getDoc(petRef);
+        const d = snap.exists() ? snap.data() : {};
+
+        // If they already fed today, or the token already exists for today, do nothing.
+        if ((d.lastFedYMD || "") === today) return false;
+        if ((d.canFeedYMD || "") === today) return false;
+
+        await setDoc(petRef, { canFeedYMD: today, journalCount: increment(1) }, { merge: true });
+
+        // First-ever journal badge (safe if it already exists)
+        try {
+          const bRef = doc(db, "users", userId, "badges", "firstJournal");
+          if (!(await getDoc(bRef)).exists()) {
+            await setDoc(bRef, { key: "firstJournal", label: "First Journal", emoji: "📝", earnedAt: serverTimestamp() });
+          }
+        } catch { }
+
+        return true; // unlocked feeding for today for the first time
+      }
+
+      // ---------- actions ----------
+      let saving = false;
+
+      async function saveJournalEntry() {
+        if (saving) return;
+
+        const text = (txt?.value || "").trim();
+        if (!uid) { location.replace("login.html?next=journal.html"); return; }
+        if (!text) { txt?.focus(); return; }
+
+        const saveBtn = document.getElementById("saveBtn"); // optional id
+        saving = true;
+        saveBtn?.setAttribute("disabled", "disabled");
+
+        try {
+          await addDoc(collection(db, "users", uid, "journal"), {
+            text,
+            createdAt: serverTimestamp()
+          });
+          txt.value = "";
+
+          let unlockedNow = false;
+          try { unlockedNow = await flagCanFeedToday(uid); } catch (e) { console.warn("flagCanFeedToday:", e); }
+
+          const banner = document.getElementById("petUnlockedMsg"); // optional banner element
+          if (unlockedNow) {
+            if (banner) {
+              banner.textContent = "Nice journaling! You can feed your pet today 🐾";
+              banner.style.display = "block";
+            } else {
+              alert("Nice journaling! You can feed your pet today 🐾");
+            }
+          }
+        } catch (e) {
+          console.error("[journal] add error:", e);
+          alert("Sorry, couldn’t save. Please try again.");
+        } finally {
+          saving = false;
+          saveBtn?.removeAttribute("disabled");
+        }
+      }
+      window.saveJournalEntry = saveJournalEntry;
+
+      async function deleteEntry(id) {
+        if (!uid || !id) return;
+        try {
+          await deleteDoc(doc(db, "users", uid, "journal", id));
+        } catch (e) {
+          console.error("[journal] delete error:", e);
+        }
+      }
+      window.deleteEntry = deleteEntry;
+
+      function renderEntries(snap) {
+        let html = "";
+        snap.forEach(d => {
+          const { text = "", createdAt } = d.data() || {};
+          const when = createdAt?.toDate ? createdAt.toDate() : null;
+          const iso = when ? when.toLocaleString() : "…";
+          html += `
+                <div class="entry">
+                  <button class="delete-button" aria-label="Delete" onclick="deleteEntry('${d.id}')">❌</button>
+                  <time>${esc(iso)}</time>
+                  <div class="text">${esc(text)}</div>
+                </div>`;
+        });
+        list.innerHTML = html || `<p style="text-align:center;color:#fff;opacity:.85;">No entries yet — write your first one 💡</p>`;
+      }
+
+      // ---------- auth + theme + live list ----------
+      onAuthStateChanged(auth, (user) => {
+        unsubTheme?.(); unsubEntries?.();
+        unsubTheme = unsubEntries = null;
+
+        if (!user) { location.replace("login.html?next=journal.html"); return; }
+        uid = user.uid;
+
+        let first = true;
+        unsubTheme = onSnapshot(
+          doc(db, "users", uid),
+          (snap) => {
+            const t = snap.exists() ? (snap.data().themeClass || "theme-original") : "theme-original";
+            applyThemeClass(t);
+            if (first) { reveal(); clearTimeout(safety); first = false; }
+          },
+          (err) => { console.error("[journal] theme", err); applyThemeClass("theme-original"); reveal(); clearTimeout(safety); }
+        );
+
+        const q = query(collection(db, "users", uid, "journal"), orderBy("createdAt", "desc"));
+        unsubEntries = onSnapshot(q, renderEntries, (err) => console.error("[journal] list error:", err));
+      });
+    </script>
+
+  </body>
+
+</html>
