@@ -2,6 +2,57 @@
 <html lang="en" class="pet-page" data-ready="0">
 
 <head>
+  <script>
+    (function () {
+      const PUBLIC_PAGES = ["index.html", "important-numbers.html", "privacy.html", "login.html", "register.html"];
+      const path = location.pathname.split("/").pop() || "index.html";
+      if (PUBLIC_PAGES.includes(path)) return;
+
+      // Hide immediately to avoid UI flash
+      document.documentElement.style.visibility = "hidden";
+
+      const goLogin = () => {
+        location.href = "login.html?next=" + encodeURIComponent(location.href);
+      };
+
+      // Helper: allow offline if we have a remembered user
+      function allowOfflineIfRemembered() {
+        try {
+          const uid = localStorage.getItem("currentUser");
+          const authed = sessionStorage.getItem("fs_logged_in") === "1";
+          if (uid || authed) {
+            document.documentElement.style.visibility = "";
+            document.documentElement.setAttribute("data-ready", "1");
+            return true;
+          }
+        } catch { }
+        return false;
+      }
+
+      (async () => {
+        try {
+          // Try real Firebase Auth (online case)
+          const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+          const { auth } = await import("./firebase-init.js");
+          onAuthStateChanged(auth, (user) => {
+            if (!user) return goLogin();
+            document.documentElement.style.visibility = "";
+            document.documentElement.setAttribute("data-ready", "1");
+          });
+        } catch (e) {
+          // Offline or CDN problem → allow offline if we remember a user, else login
+          if (!navigator.onLine && allowOfflineIfRemembered()) return;
+          goLogin();
+        }
+      })();
+    })();
+  </script>
+    
+  <!-- At the top of delete-account.html <body> or in <head> -->
+  <script type="module">
+    import './firebase-init.js'; // ensures app/auth/db are initialized
+  </script>
+    
   <!-- 0) Auth gate (protected page) -->
   <meta name="auth" content="required">
   <script type="module" src="auth.js"></script>
@@ -40,13 +91,13 @@
 
   <!-- PWA -->
   <!-- Absolute (good for GitHub Pages) -->
-  <link rel="manifest" href="manifest.webmanifest?v=27">
+  <link rel="manifest" href="manifest.webmanifest">
   
   <!-- Favicons -->
-  <link rel="icon" type="image/svg+xml" sizes="any" href="/three-sides.io/favicon.svg">
-  <link rel="icon" type="image/png" sizes="32x32" href="/three-sides.io/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/three-sides.io/favicon-16.png">
-  <link rel="apple-touch-icon" href="/three-sides.io/icon-192.png"> <!-- iOS Home screen -->
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/3-sides-planner.io/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/3-sides-planner.io/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/3-sides-planner.io/favicon-16.png">
+  <link rel="apple-touch-icon" href="/3-sides-planner.io/icon-192.png"> <!-- iOS Home screen -->
 
   <!-- Preconnects so Firebase/fonts start quicker -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -911,7 +962,12 @@ img, svg, video { max-width: 100%; height: auto; display: block!important; }
 }
 .pet-stats{ margin: 0; }
 
-</style>
+/* ================= register css add ons ================ */
+/* ADDED: tiny legal footer style for the Privacy link */
+/* Privacy link at the bottom: make it match the accent */
+.legal-footer a { color: #C9BBFF !important; }              /* link color */
+.legal-footer a:hover { text-decoration: underline; filter: brightness(1.12); }
+  </style>
 
 </head>
 
@@ -1001,6 +1057,11 @@ img, svg, video { max-width: 100%; height: auto; display: block!important; }
 
     <button id="resetPetBtn" class="reset-btn" onclick="resetPet()">Reset Pet</button>
   
+    <!-- ADDED: minimal, visible Privacy link (no other layout changes) -->
+    <div class="legal-footer" role="contentinfo">
+      View our <a href="privacy.html" rel="noopener">Privacy Policy</a>.
+    </div>
+
   <footer class="bottom-nav">
     <a href="index.html" class="nav-icon">🏠<span>Home</span></a>
     <a href="toolkit-hub.html" class="nav-icon">🧰<span>Toolkit</span></a>
@@ -1014,10 +1075,138 @@ img, svg, video { max-width: 100%; height: auto; display: block!important; }
     import { auth } from "./firebase-init.js";
     import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-    // Reveal helper to mirror index.html's pattern
+    // ----- Mini toast UI (auto-injected) -----
+    (function ensureToastUI() {
+      if (!document.getElementById("toast-style")) {
+        const s = document.createElement("style");
+        s.id = "toast-style";
+        s.textContent = `
+            .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(16px);
+              min-width:240px;max-width:92vw;padding:12px 16px;border-radius:12px;background:rgba(0,0,0,.85);
+              color:#fff;font-weight:600;font-size:14px;line-height:1.35;box-shadow:0 6px 20px rgba(0,0,0,.25);
+              opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;z-index:9999}
+            .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+            .toast .small{display:block;font-weight:500;opacity:.85;margin-top:4px}
+            [data-offline="1"]{opacity:.6;filter:grayscale(.25)}
+          `;
+        document.head.appendChild(s);
+      }
+      if (!document.getElementById("appToast")) {
+        const d = document.createElement("div");
+        d.id = "appToast";
+        d.className = "toast";
+        d.role = "status";
+        d.setAttribute("aria-live", "polite");
+        document.body.appendChild(d);
+      }
+    })();
+
+    function showToast(msg, sub = "") {
+      const el = document.getElementById("appToast");
+      if (!el) return;
+      el.innerHTML = sub ? `${msg}<span class="small">${sub}</span>` : msg;
+      el.classList.add("show");
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => el.classList.remove("show"), 2400);
+    }
+    window.__showToast = showToast; // optional for pet.page.js reuse
+
+    // Reveal helper
     const reveal = () => document.documentElement.setAttribute("data-ready", "1");
 
-    // Wait for auth first, then pull Firestore + your pet logic.
+    // ---------- helpers to decide what's navigation vs. action ----------
+    function isInternalPageLink(a) {
+      if (!a || a.tagName !== "A") return false;
+      const href = a.getAttribute("href") || "";
+      try {
+        const u = new URL(href, location.href);
+        // allow same-origin navigations (e.g., journal.html, toolkit-hub.html, etc.)
+        // your SW precaches these, so they work offline.
+        const sameOrigin = u.origin === location.origin;
+        const isPage = /\.html(?:[#?].*)?$/i.test(u.pathname) || u.pathname === "/" || href.startsWith("#");
+        const isTelMail = /^mailto:|^tel:/i.test(href);
+        return sameOrigin && isPage && !isTelMail;
+      } catch {
+        // relative like "journal.html" also lands here as OK
+        return /\.html(?:[#?].*)?$/.test(href) || href === "" || href.startsWith("#");
+      }
+    }
+
+    function isActionControl(el) {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === "BUTTON") return true;
+      if (tag === "INPUT") {
+        const type = (el.getAttribute("type") || "").toLowerCase();
+        return type === "button" || type === "submit";
+      }
+      if (el.getAttribute && el.getAttribute("role") === "button") return true;
+      return false;
+    }
+
+    // ===== OFFLINE GUARD =====
+    // We ONLY disable true "actions". All anchors keep working so users can navigate to journal.html etc.
+    function setOfflineState(isOffline) {
+      // Mark action controls for a visual hint; do not touch anchors.
+      document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"]').forEach(btn => {
+        // If the button is inside a same-origin page link (e.g., <a href="journal.html"><button>…</button></a>)
+        // we want navigation to keep working offline, so do NOT disable it.
+        const wrapperLink = btn.closest("a[href]");
+        if (wrapperLink && isInternalPageLink(wrapperLink)) {
+          btn.removeAttribute("data-offline");
+          btn.disabled = false; // ensure it doesn't block the anchor
+          return;
+        }
+        if (isOffline) {
+          btn.setAttribute("data-offline", "1");
+          btn.disabled = true;
+        } else {
+          btn.removeAttribute("data-offline");
+          // only re-enable if we were the ones who disabled it
+          if (btn.disabled) btn.disabled = false;
+        }
+      });
+    }
+
+    // Capture clicks BEFORE inline onclicks fire; block actions while offline,
+    // but **allow** internal page links (including button-inside-anchor).
+    function installGlobalOfflineClickTrap() {
+      document.addEventListener("click", (e) => {
+        if (navigator.onLine) return;
+
+        const a = e.target.closest?.("a[href]");
+        if (a && isInternalPageLink(a)) {
+          // allow navigation to journal.html, toolkit-hub.html, wellness, etc. even while offline
+          return;
+        }
+
+        const ctl = e.target.closest?.('button, [role="button"], input[type="button"], input[type="submit"]');
+        if (ctl && isActionControl(ctl)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          showToast("You’re offline", "Actions are disabled. You can still browse.");
+        }
+      }, true); // capture
+    }
+
+    function wireGlobalOfflineGuard() {
+      installGlobalOfflineClickTrap();
+      setOfflineState(!navigator.onLine);
+      window.addEventListener("online", () => { setOfflineState(false); showToast("Back online", "Syncing any saved journal…"); });
+      window.addEventListener("offline", () => { setOfflineState(true); showToast("You’re offline", "Actions are disabled. You can still browse."); });
+    }
+
+    // SW Background Sync → friendly nudge (pet.page.js onSnapshot will update UI)
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", (ev) => {
+        if (ev.data && ev.data.type === "SYNC_OUTBOX") {
+          showToast("Syncing…", "Checking if your pet can eat now");
+        }
+      });
+    }
+
+    // Auth + lazy Firestore + your pet logic
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
         const next = encodeURIComponent(location.pathname + location.search + location.hash);
@@ -1025,17 +1214,14 @@ img, svg, video { max-width: 100%; height: auto; display: block!important; }
         return;
       }
 
-      // Page can show now (theme already applied in <head>)
       reveal();
 
-      // Lazy-load Firestore only after we know we need it
       const {
         doc, getDoc, setDoc, updateDoc, onSnapshot, deleteDoc,
         collection, serverTimestamp, increment, runTransaction,
         arrayUnion, getDocs
       } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
 
-      // Now load your existing pet logic (moved into its own module)
       const { bootPetPage } = await import("./pet.page.js");
       bootPetPage({
         firestore: {
@@ -1045,8 +1231,11 @@ img, svg, video { max-width: 100%; height: auto; display: block!important; }
         },
         auth, user
       });
+
+      // After UI exists, enforce offline behavior across the whole page
+      wireGlobalOfflineGuard();
     });
   </script>
-    
+  
 </body>
 </html>

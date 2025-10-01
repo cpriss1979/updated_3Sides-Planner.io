@@ -3,6 +3,39 @@
 <html lang="en" data-ready="0">
 
 <head>
+  <script>
+    (function () {
+      const PUBLIC_PAGES = ["index.html", "important-numbers.html", "privacy.html", "login.html", "register.html"];
+      const path = location.pathname.split("/").pop() || "index.html";
+      if (PUBLIC_PAGES.includes(path)) return; // no-op on public pages
+
+      // Hide immediately to avoid UI flash on protected pages
+      document.documentElement.style.visibility = "hidden";
+
+      const goLogin = () => {
+        location.href = "login.html?next=" + encodeURIComponent(location.href);
+      };
+
+      // Try Firebase; fall back to a temporary session flag if needed
+      (async () => {
+        try {
+          const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+          const { auth } = await import("./firebase-init.js");
+          onAuthStateChanged(auth, (user) => {
+            if (!user) return goLogin();
+            document.documentElement.style.visibility = "";
+            document.documentElement.setAttribute("data-ready", "1");
+          });
+        } catch (e) {
+          const authed = sessionStorage.getItem("fs_logged_in") === "1"; // temporary fallback
+          if (!authed) return goLogin();
+          document.documentElement.style.visibility = "";
+          document.documentElement.setAttribute("data-ready", "1");
+        }
+      })();
+    })();
+  </script>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>3-Sides Planner — FEEL-GOOD TOOLS</title>
@@ -31,7 +64,7 @@
 
   <!-- PWA + will be kept in sync with your theme by JS -->
   <!-- Absolute (good for GitHub Pages) -->
-  <link rel="manifest" href="manifest.webmanifest?v=27">
+  <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#6a5acd">
   <meta name="color-scheme" content="dark light">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -43,10 +76,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
 
   <!-- Favicons -->
-  <link rel="icon" type="image/svg+xml" sizes="any" href="/three-sides.io/favicon.svg">
-  <link rel="icon" type="image/png" sizes="32x32" href="/three-sides.io/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/three-sides.io/favicon-16.png">
-  <link rel="apple-touch-icon" href="/three-sides.io/icon-192.png"> <!-- iOS Home screen -->
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/3-sides-planner.io/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/3-sides-planner.io/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/3-sides-planner.io/favicon-16.png">
+  <link rel="apple-touch-icon" href="/3-sides-planner.io/icon-192.png"> <!-- iOS Home screen -->
 
   <link rel="preload" href="style.css" as="style" onload="this.rel='stylesheet'">
   <noscript>
@@ -701,7 +734,64 @@ input, textarea, select {
 
 #toolkitList .idea-del:active{ transform: scale(.95); }
 
-  </style>
+/* ================= register css add ons ================ */
+  .legal-footer {
+    text-align: center;
+    font-size: 0.9rem;
+    margin-top: 8px;
+    color: var(--text-color) !important; /* NEW: match theme text color */
+  }
+  .legal-footer a {
+    color: inherit;                 /* NEW: use same color as parent */
+    text-decoration: underline;
+  }
+
+  /* keep content clear of the fixed bottom nav (about ~6rem tall) */
+  .page-wrapper { padding-bottom: 6.5rem !important; }
+
+  /* make the Privacy link visible + themed and keep it above nav */
+  .legal-footer {
+    text-align: center;
+    font-size: 0.9rem;
+    margin: 0.5rem 0 6.5rem !important; /* push it above the nav */
+    color: var(--text-color) !important;
+  }
+  .legal-footer a { color: inherit; text-decoration: underline; }
+
+/* ================= saving offline =================== */
+/* Offline/Sync toast */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%) translateY(16px);
+    min-width: 240px;
+    max-width: 92vw;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: rgba(0,0,0,.85);
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 1.35;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s ease, transform .25s ease;
+    z-index: 9999;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+  }
+  .toast .small {
+    display: block;
+    font-weight: 500;
+    opacity: .85;
+    margin-top: 4px;
+  }
+</style>
 </head>
 
 <body id="pageBody">
@@ -715,107 +805,137 @@ input, textarea, select {
         <button class="dropdown-icon-btn" type="button" aria-controls="feelGoodList" aria-expanded="false"
           onclick="toggleFeelGood()">💖</button>
 
-        <div id="feelGoodList" class="feel-good-content">
-          <table class="feel-good-chart">
-            <tbody>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Taking a walk outside</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Listening to music</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">A hot cup of cocoa in your favorite mug</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Talk to a friend</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Journal your thoughts</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Cuddle with a soft stuffed animal</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Watch a comforting movie or show</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Take a bubble bath</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Light a scented candle</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Do deep breathing exercises</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Stretch your body</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Color in an adult coloring book</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Read a favorite book</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Make a gratitude list</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Drink a glass of cold water</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Put on comfy clothes or pajamas</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Dance around your room</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Look at old happy photos</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Make a playlist of feel-good songs</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Use a fidget toy or stress ball</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Step outside and feel the sun</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Write a letter to your future self</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Do a skincare routine</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Pet an animal (even a neighbor’s dog!)</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Listen to a positive podcast</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Do a small craft or creative project</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Watch funny videos or memes</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Organize a tiny space (like a drawer)</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Open a window and breathe deeply</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Wrap yourself in a weighted blanket</td>
-              </tr>
-              <tr>
-                <td onclick="addIdeaFromList(event)">Say affirmations out loud</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+          <div id="feelGoodList" class="feel-good-content">
+            <table class="feel-good-chart">
+              <tbody>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Taking a walk outside" onclick="addIdeaFromList(event)">Taking a walk
+                    outside</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Listening to music" onclick="addIdeaFromList(event)">Listening to
+                    music</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="A hot cup of cocoa in your favorite mug"
+                    onclick="addIdeaFromList(event)">A hot cup of cocoa in your favorite mug</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Talk to a friend" onclick="addIdeaFromList(event)">Talk to a friend
+                  </td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Journal your thoughts" onclick="addIdeaFromList(event)">Journal your
+                    thoughts</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Cuddle with a soft stuffed animal" onclick="addIdeaFromList(event)">
+                    Cuddle with a soft stuffed animal</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Watch a comforting movie or show" onclick="addIdeaFromList(event)">
+                    Watch a comforting movie or show</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Take a bubble bath" onclick="addIdeaFromList(event)">Take a bubble
+                    bath</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Light a scented candle" onclick="addIdeaFromList(event)">Light a
+                    scented candle</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Do deep breathing exercises" onclick="addIdeaFromList(event)">Do deep
+                    breathing exercises</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Stretch your body" onclick="addIdeaFromList(event)">Stretch your body
+                  </td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Color in an adult coloring book" onclick="addIdeaFromList(event)">
+                    Color in an adult coloring book</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Read a favorite book" onclick="addIdeaFromList(event)">Read a favorite
+                    book</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Make a gratitude list" onclick="addIdeaFromList(event)">Make a
+                    gratitude list</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Drink a glass of cold water" onclick="addIdeaFromList(event)">Drink a
+                    glass of cold water</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Put on comfy clothes or pajamas" onclick="addIdeaFromList(event)">Put
+                    on comfy clothes or pajamas</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Dance around your room" onclick="addIdeaFromList(event)">Dance around
+                    your room</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Look at old happy photos" onclick="addIdeaFromList(event)">Look at old
+                    happy photos</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Make a playlist of feel-good songs" onclick="addIdeaFromList(event)">
+                    Make a playlist of feel-good songs</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Use a fidget toy or stress ball" onclick="addIdeaFromList(event)">Use
+                    a fidget toy or stress ball</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Step outside and feel the sun" onclick="addIdeaFromList(event)">Step
+                    outside and feel the sun</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Write a letter to your future self" onclick="addIdeaFromList(event)">
+                    Write a letter to your future self</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Do a skincare routine" onclick="addIdeaFromList(event)">Do a skincare
+                    routine</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Pet an animal (even a neighbor’s dog!)"
+                    onclick="addIdeaFromList(event)">Pet an animal (even a neighbor’s dog!)</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Listen to a positive podcast" onclick="addIdeaFromList(event)">Listen
+                    to a positive podcast</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Do a small craft or creative project"
+                    onclick="addIdeaFromList(event)">Do a small craft or creative project</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Watch funny videos or memes" onclick="addIdeaFromList(event)">Watch
+                    funny videos or memes</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Organize a tiny space (like a drawer)"
+                    onclick="addIdeaFromList(event)">Organize a tiny space (like a drawer)</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Open a window and breathe deeply" onclick="addIdeaFromList(event)">
+                    Open a window and breathe deeply</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Wrap yourself in a weighted blanket" onclick="addIdeaFromList(event)">
+                    Wrap yourself in a weighted blanket</td>
+                </tr>
+                <tr>
+                  <td role="button" tabindex="0" data-idea="Say affirmations out loud" onclick="addIdeaFromList(event)">Say
+                    affirmations out loud</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>          
+</div>
       <div class="toolkit-entry">
         <!-- turn input+button into a form so Safari handles keyboard + click the same way -->
         <form id="ideaForm" novalidate>
@@ -831,9 +951,16 @@ input, textarea, select {
       </div>
     </div>
   </div>
-
+  
   <div style="text-align:center; margin-bottom: 8rem;">
     <a href="toolkit-hub.html" class="button-black">← Back</a>
+  </div>
+
+  <div id="appToast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- ADDED: minimal, visible Privacy link (no other layout changes) -->
+  <div class="legal-footer" role="contentinfo">
+    View our <a href="privacy.html" rel="noopener">Privacy Policy</a>.
   </div>
 
   <footer class="bottom-nav">
@@ -853,6 +980,43 @@ input, textarea, select {
       doc, getDoc, onSnapshot, collection, addDoc, deleteDoc,
       query, orderBy, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { initOutbox, queueOrWrite, flushOutbox } from "./outbox.js";  // ⬅️ include flushOutbox for "Synced!" toast
+
+    /* ---------- Tiny toast UI (auto-injected) ---------- */
+    function ensureToastUI() {
+      if (!document.getElementById("toast-style")) {
+        const style = document.createElement("style");
+        style.id = "toast-style";
+        style.textContent = `
+            .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(16px);
+              min-width:240px;max-width:92vw;padding:12px 16px;border-radius:12px;background:rgba(0,0,0,.85);
+              color:#fff;font-weight:600;font-size:14px;line-height:1.35;box-shadow:0 6px 20px rgba(0,0,0,.25);
+              opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;z-index:9999}
+            .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+            .toast .small{display:block;font-weight:500;opacity:.85;margin-top:4px}
+          `;
+        document.head.appendChild(style);
+      }
+      if (!document.getElementById("appToast")) {
+        const div = document.createElement("div");
+        div.id = "appToast";
+        div.className = "toast";
+        div.setAttribute("role", "status");
+        div.setAttribute("aria-live", "polite");
+        document.body.appendChild(div);
+      }
+    }
+    function showToast(message, sub = "") {
+      ensureToastUI();
+      const el = document.getElementById("appToast");
+      el.innerHTML = sub ? `${message}<span class="small">${sub}</span>` : message;
+      el.classList.add("show");
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => el.classList.remove("show"), 2400);
+    }
+
+    // 🔧 One place to keep the shared sub-line so both paths match
+    const OFFLINE_SUB = "You can close the app anytime.";
 
     /* ---------- Fast theme paint (avoid flash) ---------- */
     (function preloadTheme() {
@@ -912,12 +1076,17 @@ input, textarea, select {
       syncMetaTheme();
     }
 
+    // Correct page name:
     const here = "toolkit.html";
+
     const $ = (id) => document.getElementById(id);
     const escapeHTML = (s = "") => String(s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+
+    // Normalize idea text from DOM nodes (removes doubled spaces & trims)
+    const normalizeIdeaText = (t = "") => t.replace(/\s+/g, " ").trim();
 
     /* ---------- DOM refs ---------- */
     const listEl = $("toolkitList");
@@ -963,16 +1132,32 @@ input, textarea, select {
     let uid = null;
     let adding = false; // prevent double adds if click+enter happen together
 
+    // Track if we queued anything this session; used to show "Synced!" only when relevant.
+    let hasQueuedSinceLastSync = false;
+
+    // The ONLY Firestore write function for this page.
+    async function uploadToolkitIdea(payload) {
+      await addDoc(collection(db, "users", uid, "ideas"), {
+        text: payload.text,
+        createdAt: serverTimestamp(),
+        source: payload.source || "custom"
+      });
+    }
+
     async function addIdea() {
       if (!uid) { location.replace("login.html?next=" + encodeURIComponent(here)); return; }
       const text = (inputEl?.value || "").trim();
       if (!text || adding) return;
       try {
         adding = true;
-        await addDoc(collection(db, "users", uid, "ideas"), {
-          text, createdAt: serverTimestamp(), source: "custom"
-        });
+        const mode = await queueOrWrite({ kind: "toolkit", text, source: "custom" });
         if (inputEl) { inputEl.value = ""; inputEl.focus(); }
+        if (mode === "queued") {
+          hasQueuedSinceLastSync = true;
+          showToast("Saved offline — will sync", OFFLINE_SUB);
+        } else {
+          showToast("Saved");
+        }
       } catch (err) {
         console.error("[toolkit] addIdea failed:", err);
         alert("Couldn't save that idea. Please try again.");
@@ -984,13 +1169,24 @@ input, textarea, select {
     async function addIdeaFromList(ev) {
       if (!uid) { location.replace("login.html?next=" + encodeURIComponent(here)); return; }
       ev?.preventDefault?.();
-      const t = (ev?.currentTarget?.textContent || ev?.target?.textContent || "").trim();
+
+      // Prefer clean text from data-idea="…", otherwise fall back to textContent
+      const raw = ev?.currentTarget?.dataset?.idea ??
+        ev?.target?.dataset?.idea ??
+        ev?.currentTarget?.textContent ??
+        ev?.target?.textContent ?? "";
+      const t = normalizeIdeaText(raw);
       if (!t) return;
+
       try {
-        await addDoc(collection(db, "users", uid, "ideas"), {
-          text: t, createdAt: serverTimestamp(), source: "preset"
-        });
+        const mode = await queueOrWrite({ kind: "toolkit", text: t, source: "preset" });
         closeFeelGood();
+        if (mode === "queued") {
+          hasQueuedSinceLastSync = true;
+          showToast("Saved offline — will sync", OFFLINE_SUB);   // ⬅️ now matches manual add
+        } else {
+          showToast("Saved");
+        }
       } catch (err) {
         console.error("[toolkit] add from list failed:", err);
         alert("Couldn't add that item. Please try again.");
@@ -1039,6 +1235,9 @@ input, textarea, select {
       uid = user.uid;
       try { localStorage.setItem("currentUser", uid); } catch { }
 
+      // Wire the outbox now that we know uid
+      initOutbox(() => uid, uploadToolkitIdea);
+
       // first paint theme
       try {
         const firstSnap = await getDoc(doc(db, "users", uid));
@@ -1053,7 +1252,7 @@ input, textarea, select {
         () => applyThemeClass("theme-original")
       );
 
-      // live ideas — include metadata so local writes render immediately on all engines
+      // live ideas
       const q = query(collection(db, "users", uid, "ideas"), orderBy("createdAt", "asc"));
       unsubIdeas = onSnapshot(
         q,
@@ -1061,13 +1260,31 @@ input, textarea, select {
         renderIdeas,
         (err) => console.error("[toolkit] ideas snapshot error:", err)
       );
+
+      // Try flushing any queued entries as soon as we know who the user is
+      flushOutbox();
     });
+
+    // ---- Connectivity & SW wake-ups (toasts) ----
+    window.addEventListener("online", () => showToast("Back online", "Syncing any saved items…"));
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", async (ev) => {
+        if (ev.data && ev.data.type === "SYNC_OUTBOX") {
+          await flushOutbox();
+          if (hasQueuedSinceLastSync) {
+            showToast("All set", "Your offline items have synced.");
+            hasQueuedSinceLastSync = false;
+          }
+        }
+      });
+    }
 
     // Safety net (offline/CDN)
     setTimeout(() => {
       if (document.documentElement.getAttribute("data-ready") !== "1") reveal();
     }, 1200);
-  </script>
+  </script>  
   
 </body>
 

@@ -2,6 +2,45 @@
 <html lang="en" data-ready="0">
 
 <head>
+  <!-- 0) AUTH GUARD — FIRST in <head> on PROTECTED pages -->
+  <script>
+    (function () {
+      const PUBLIC_PAGES = ["index.html", "important-numbers.html", "privacy.html", "login.html", "register.html"];
+      const path = location.pathname.split("/").pop() || "index.html";
+      if (PUBLIC_PAGES.includes(path)) return; // no-op on public pages
+
+      // Hide immediately to avoid UI flash on protected pages
+      document.documentElement.style.visibility = "hidden";
+
+      const goLogin = () => {
+        location.href = "login.html?next=" + encodeURIComponent(location.href);
+      };
+
+      // Try Firebase; fall back to a temporary session flag if needed
+      (async () => {
+        try {
+          const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+          const { auth } = await import("./firebase-init.js");
+          onAuthStateChanged(auth, (user) => {
+            if (!user) return goLogin();
+            document.documentElement.style.visibility = "";
+            document.documentElement.setAttribute("data-ready", "1");
+          });
+        } catch (e) {
+          const authed = sessionStorage.getItem("fs_logged_in") === "1"; // temporary fallback
+          if (!authed) return goLogin();
+          document.documentElement.style.visibility = "";
+          document.documentElement.setAttribute("data-ready", "1");
+        }
+      })();
+    })();
+  </script>
+
+  <!-- At the top of delete-account.html <body> or in <head> -->
+  <script type="module">
+    import './firebase-init.js'; // ensures app/auth/db are initialized
+  </script>
+    
   <!-- 1) FOUC guard: keep hidden until we flip data-ready -->
   <style>
     html:not([data-ready="1"]) {
@@ -30,13 +69,13 @@
 
   <!-- PWA -->
 <!-- Absolute (good for GitHub Pages) -->
-<link rel="manifest" href="manifest.webmanifest?v=27">
+<link rel="manifest" href="manifest.webmanifest">
 
   <!-- Favicons -->
-  <link rel="icon" type="image/svg+xml" sizes="any" href="/three-sides.io/favicon.svg">
-  <link rel="icon" type="image/png" sizes="32x32" href="/three-sides.io/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/three-sides.io/favicon-16.png">
-  <link rel="apple-touch-icon" href="/three-sides.io/icon-192.png"> <!-- iOS Home screen -->
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/3-sides-planner.io/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/.3-sides-plannerio/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/3-sides-planner.io/favicon-16.png">
+  <link rel="apple-touch-icon" href="/3-sides-planner.io/icon-192.png"> <!-- iOS Home screen -->
 
   <!-- Fonts + global CSS -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -71,7 +110,7 @@
     })();
   </script>
 
-  <!-- Page-local CSS (only for this page) -->
+  <!-- ============= Page-local CSS (only for this page)===============  -->
   <style>
     :root {
       --about-navy: rgb(3, 3, 82);
@@ -165,6 +204,12 @@
         padding: 0 1rem max(1.5rem, env(safe-area-inset-bottom));
       }
     }
+
+  /* ================= register css add ons ================ */
+/* ADDED: tiny legal footer style for the Privacy link */
+/* Privacy link at the bottom: make it match the accent */
+.legal-footer a { color: #C9BBFF !important; }              /* link color */
+.legal-footer a:hover { text-decoration: underline; filter: brightness(1.12); }
   </style>
 
   <!-- Noscript fallback -->
@@ -364,6 +409,12 @@
   <div style="text-align: center;">
     <a href="index.html" class="backToApp">Back to App</a>
   </div>
+<br>
+  <!-- ADDED: minimal, visible Privacy link (no other layout changes) -->
+  <div class="legal-footer" role="contentinfo">
+    View our <a href="privacy.html" rel="noopener">Privacy Policy</a>.
+  </div>
+
   <br><br>
   
 </body>

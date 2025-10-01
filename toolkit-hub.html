@@ -3,7 +3,46 @@
 <html lang="en" data-ready="0">
 
 <head>
+  <script>
+    (function () {
+      const PUBLIC_PAGES = ["index.html", "important-numbers.html", "privacy.html", "login.html", "register.html"];
+      const path = location.pathname.split("/").pop() || "index.html";
+      if (PUBLIC_PAGES.includes(path)) return; // no-op on public pages
+
+      // Hide immediately to avoid UI flash on protected pages
+      document.documentElement.style.visibility = "hidden";
+
+      const goLogin = () => {
+        location.href = "login.html?next=" + encodeURIComponent(location.href);
+      };
+
+      // Try Firebase; fall back to a temporary session flag if needed
+      (async () => {
+        try {
+          const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+          const { auth } = await import("./firebase-init.js");
+          onAuthStateChanged(auth, (user) => {
+            if (!user) return goLogin();
+            document.documentElement.style.visibility = "";
+            document.documentElement.setAttribute("data-ready", "1");
+          });
+        } catch (e) {
+          const authed = sessionStorage.getItem("fs_logged_in") === "1"; // temporary fallback
+          if (!authed) return goLogin();
+          document.documentElement.style.visibility = "";
+          document.documentElement.setAttribute("data-ready", "1");
+        }
+      })();
+    })();
+  </script>
+
   <meta charset="UTF-8" />
+
+  <!-- At the top of delete-account.html <body> or in <head> -->
+  <script type="module">
+    import './firebase-init.js'; // ensures app/auth/db are initialized
+  </script>
+    
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>3-Sides Planner — TOOLKIT-HUB</title>
 
@@ -31,15 +70,15 @@
 
   <!-- PWA + will be kept in sync with your theme by JS -->
   <!-- Absolute (good for GitHub Pages) -->
-  <link rel="manifest" href="manifest.webmanifest?v=27">
+  <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#6a5acd">
   <meta name="color-scheme" content="dark light">
   
   <!-- Favicons -->
-  <link rel="icon" type="image/svg+xml" sizes="any" href="/three-sides.io/favicon.svg">
-  <link rel="icon" type="image/png" sizes="32x32" href="/three-sides.io/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/three-sides.io/favicon-16.png">
-  <link rel="apple-touch-icon" href="/three-sides.io/icon-192.png"> <!-- iOS Home screen -->
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/3-sides-planner.io/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/3-sides-planner.io/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/3-sides-planner.io/favicon-16.png">
+  <link rel="apple-touch-icon" href="/3-sides-planner.io/icon-192.png"> <!-- iOS Home screen -->
 
   <!-- Fonts & CSS (non-blocking) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -176,6 +215,17 @@
       }
     }  
 
+    /* ================= register css add ons ================ */
+  .legal-footer {
+    text-align: center;
+    font-size: 0.9rem;
+    margin-top: 8px;
+    color: var(--text-color) !important; /* NEW: match theme text color */
+  }
+  .legal-footer a {
+    color: inherit;                 /* NEW: use same color as parent */
+    text-decoration: underline;
+  }
   </style>
 </head>
 
@@ -195,6 +245,11 @@
   </div>
 
   <div class="torn-paper-divider"></div>
+<br><br>
+  <!-- ADDED: minimal, visible Privacy link (no other layout changes) -->
+  <div class="legal-footer" role="contentinfo">
+    View our <a href="privacy.html" rel="noopener">Privacy Policy</a>.
+  </div>
 
   <footer class="bottom-nav">
     <a href="index.html" class="nav-icon">🏠<span>Home</span></a>

@@ -5,7 +5,12 @@
   <meta charset="UTF-8">
 
   <script src="sw-register.js"></script>
-
+  
+  <!-- At the top of delete-account.html <body> or in <head> -->
+  <script type="module">
+    import './firebase-init.js'; // ensures app/auth/db are initialized
+  </script>
+    
   <script>
     (function () {
       try {
@@ -20,13 +25,13 @@
   </script>
     
     <!-- Absolute (good for GitHub Pages) -->
-    <link rel="manifest" href="manifest.webmanifest?v=27">
+    <link rel="manifest" href="manifest.webmanifest">
     
     <!-- Favicons -->
-    <link rel="icon" type="image/svg+xml" sizes="any" href="/three-sides.io/favicon.svg">
-    <link rel="icon" type="image/png" sizes="32x32" href="/three-sides.io/favicon-32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/three-sides.io/favicon-16.png">
-    <link rel="apple-touch-icon" href="/three-sides.io/icon-192.png"> <!-- iOS Home screen -->
+    <link rel="icon" type="image/svg+xml" sizes="any" href="/3-sides-planner.io/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/3-sides-planner.io/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/3-sides-planner.io/favicon-16.png">
+    <link rel="apple-touch-icon" href="/3-sides-planner.io/icon-192.png"> <!-- iOS Home screen -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 

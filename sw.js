@@ -1,46 +1,54 @@
-// sw.js
+// sw.js — 3-Sides Planner (v29)
+// Drop-in: preserves your structure, adds robustness for PWABuilder + GH Pages
+
 (() => {
-    // If someone opens this file in a normal tab, do nothing.
+    // --- Guard: only run when actually in a Service Worker context ---
     const isSW =
         typeof ServiceWorkerGlobalScope !== "undefined" &&
         self instanceof ServiceWorkerGlobalScope;
     if (!isSW) return;
 
     // ----- Versioned cache name derived from sw.js?v=NUMBER -----
+    // e.g. "8" when sw.js?v=8. Keep your default "0" if not provided.
     const regURL = new URL(self.location.href);
-    const SWV = regURL.searchParams.get("v") || "0"; // e.g. "8" when sw.js?v=8
-    const CACHE_PREFIX = "three-sides-v";
+    const SWV = regURL.searchParams.get("v") || "0";
+    const CACHE_PREFIX = "3-sides-planner-v";
     const CACHE_NAME = `${CACHE_PREFIX}${SWV}`;
 
-    // Scope-aware helper for absolute same-origin URLs
+    // Scope-aware helper for absolute same-origin URLs (GitHub Pages safe)
     const scope =
         (self.registration && self.registration.scope) ||
         self.location.origin + "/";
     const P = (p) => new URL(p, scope).toString();
 
     // ----- Precache: include your app shell and static assets here -----
+    // Add any page you want to reliably work offline.
     const CORE = [
         // HTML pages
         "index.html",
         "about.html",
         "theme.html",
         "wellness.html",
+        "wellnessPlan.html",
         "pet.html",
-        "important-numbers.html",
-        "toolkit-hub.html",
-        "login.html",
-
-        // Also linked from pet.html
         "journal.html",
+        "toolkit-hub.html",   // main Toolkit hub
+        "toolkit.html",       // include if you sometimes link to this older name
+        "letter.html",
+        "support.html",
+        "important-numbers.html",
+        "login.html",
+        "register.html",
+        "privacy.html",
 
-        // CSS/JS
+        // CSS / JS
         "style.css",
         "mainTheme.css",
         "sw-register.js",
         "firebase-init.js",
-        // Add "auth.js" here only if it actually exists and is used
+        "outbox.js",          // Background Sync helper for pages
 
-        // Images / icons
+        // Images / icons / media
         "relax.png",
         "favicon-16.png",
         "favicon-32.png",
@@ -48,13 +56,12 @@
         "icon-512.png",
         "icon-192-maskable.png",
         "icon-512-maskable.png",
-
-        // Pet art used on this page
         "pet-baby.png",
         "pet-child.png",
         "pet-teen.png",
         "pet-adult.png",
         "forest.png",
+        "chime.mp3",          // used in support page
 
         // Manifest (unversioned to avoid drift)
         "manifest.webmanifest",
@@ -62,7 +69,9 @@
 
     // Allow the page to tell us to activate immediately
     self.addEventListener("message", (event) => {
-        if (event?.data?.type === "SKIP_WAITING") self.skipWaiting();
+        const t = event?.data?.type;
+        if (t === "SKIP_WAITING") self.skipWaiting();
+        // no-op for other messages; SYNC_OUTBOX is sent *from* the SW (see below)
     });
 
     // ----- Install: precache essentials (best-effort; don't fail whole install) -----
@@ -85,7 +94,7 @@
                         }
                     })
                 );
-                // Helps first update in some browsers; final control happens via SKIP_WAITING message
+                // Helps first update; we also claim in activate
                 self.skipWaiting();
             })()
         );
@@ -107,10 +116,12 @@
 
                 // (Chrome) Navigation preload can speed first-load
                 if ("navigationPreload" in self.registration) {
-                    try { await self.registration.navigationPreload.enable(); } catch { }
+                    try {
+                        await self.registration.navigationPreload.enable();
+                    } catch { /* ignore */ }
                 }
 
-                await self.clients.claim();
+                await self.clients.claim(); // take control immediately
             })()
         );
     });
@@ -136,11 +147,11 @@
             return net;
         } catch {
             // Offline / error → fallback to cached page or home
-            return (
+            // Handle start_url with query string by ignoring search when matching
+            const cached =
                 (await cache.match(event.request)) ||
-                (await caches.match(P("index.html"))) ||
-                Response.error()
-            );
+                (await caches.match(P("index.html"), { ignoreSearch: true }));
+            return cached || Response.error();
         }
     }
 
@@ -148,9 +159,8 @@
         const req = event.request;
         const cache = await caches.open(CACHE_NAME);
 
-        const cached = await cache.match(req);
+        const cached = await cache.match(req, { ignoreSearch: false });
 
-        // ✅ Cache if OK *or* opaque (cross-origin)
         const fetchAndUpdate = fetch(req)
             .then((res) => {
                 if (res && (res.ok || res.type === "opaque")) {
@@ -179,24 +189,27 @@
         if (req.method !== "GET") return;
         if (
             req.url.startsWith("chrome-extension://") ||
-            req.url.startsWith("safari-extension://")
+            req.url.startsWith("safari-extension://") ||
+            req.url.startsWith("moz-extension://")
         ) return;
 
         // 🔕 Skip caching for Firebase/Google infra traffic (long-poll, auth, analytics)
         try {
             const host = new URL(req.url).hostname;
             const BYPASS_HOSTS = [
-                "googleapis.com",                        // firestore.googleapis.com, firebasestorage.googleapis.com
+                "googleapis.com",
                 "gstatic.com",
                 "firebaseinstallations.googleapis.com",
                 "googletagmanager.com",
                 "analytics.google.com",
                 "www.google-analytics.com"
             ];
-            if (BYPASS_HOSTS.some(h => host === h || host.endsWith("." + h))) {
+            if (BYPASS_HOSTS.some((h) => host === h || host.endsWith("." + h))) {
                 return; // let the network handle it (don’t intercept/cache)
             }
-        } catch { } // if URL parsing fails, just fall through
+        } catch {
+            /* if URL parsing fails, just fall through */
+        }
 
         // HTML navigations → network-first (with preload), fallback to cached or index.html
         if (isHTMLNav(req)) {
@@ -207,4 +220,26 @@
         // Everything else → stale-while-revalidate
         event.respondWith(staleWhileRevalidate(event));
     });
+
+    // =========================
+    // BACKGROUND SYNC (one-off)
+    // =========================
+    // When connectivity returns, wake any open pages so THEY can flush the outbox
+    // via Firebase/Firestore (auth/SDK live in the page).
+    self.addEventListener("sync", (event) => {
+        if (event.tag === "outbox-sync") {
+            event.waitUntil(handleOutboxSync());
+        }
+    });
+
+    async function handleOutboxSync() {
+        const clientsList = await self.clients.matchAll({
+            type: "window",
+            includeUncontrolled: true,
+        });
+        for (const client of clientsList) {
+            client.postMessage({ type: "SYNC_OUTBOX" });
+        }
+        // If you later create a SW-owned REST queue, you can flush it here as well.
+    }
 })();

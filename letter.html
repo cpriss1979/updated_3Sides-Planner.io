@@ -1,10 +1,49 @@
 <html lang="en" class="theme-original">
 
 <head>
+  <!-- 0) AUTH GUARD — FIRST in <head> on PROTECTED pages -->
+    <script>
+      (function () {
+        const PUBLIC_PAGES = ["index.html", "important-numbers.html", "privacy.html", "login.html", "register.html"];
+        const path = location.pathname.split("/").pop() || "index.html";
+        if (PUBLIC_PAGES.includes(path)) return; // no-op on public pages
+  
+        // Hide immediately to avoid UI flash on protected pages
+        document.documentElement.style.visibility = "hidden";
+  
+        const goLogin = () => {
+          location.href = "login.html?next=" + encodeURIComponent(location.href);
+        };
+  
+        // Try Firebase; fall back to a temporary session flag if needed
+        (async () => {
+          try {
+            const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+            const { auth } = await import("./firebase-init.js");
+            onAuthStateChanged(auth, (user) => {
+              if (!user) return goLogin();
+              document.documentElement.style.visibility = "";
+              document.documentElement.setAttribute("data-ready", "1");
+            });
+          } catch (e) {
+            const authed = sessionStorage.getItem("fs_logged_in") === "1"; // temporary fallback
+            if (!authed) return goLogin();
+            document.documentElement.style.visibility = "";
+            document.documentElement.setAttribute("data-ready", "1");
+          }
+        })();
+      })();
+    </script>
+    
   <meta charset="UTF-8" />
 
   <script src="sw-register.js"></script>
 
+  <!-- At the top of delete-account.html <body> or in <head> -->
+  <script type="module">
+    import './firebase-init.js'; // ensures app/auth/db are initialized
+  </script>
+    
   <script>
     (function () {
       try {
@@ -23,13 +62,13 @@
 
   <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet">
   <!-- Absolute (good for GitHub Pages) -->
-  <link rel="manifest" href="manifest.webmanifest?v=27">
+  <link rel="manifest" href="manifest.webmanifest">
   
   <!-- Favicons -->
-  <link rel="icon" type="image/svg+xml" sizes="any" href="/three-sides.io/favicon.svg">
-  <link rel="icon" type="image/png" sizes="32x32" href="/three-sides.io/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/three-sides.io/favicon-16.png">
-  <link rel="apple-touch-icon" href="/three-sides.io/icon-192.png"> <!-- iOS Home screen -->
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/3-sides-planner.io/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/3-sides-planner.io/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/3-sides-planner.io/favicon-16.png">
+  <link rel="apple-touch-icon" href="/3-sides-planner.io/icon-192.png"> <!-- iOS Home screen -->
 
   <!-- Prevent flash of wrong theme -->
   <!-- Critical paint (no white flash) -->
@@ -655,6 +694,9 @@ ul.right-align li { color: white; }
 /* ================= loaded/saved status ==================== */
 .statusline { color:#bbb; font-size:.9rem; text-align:center; margin:.3rem 0; }
 
+/* ================= register css add ons ================ */
+.legal-footer a { color: #C9BBFF !important; }              /* link color */
+.legal-footer a:hover { text-decoration: underline; filter: brightness(1.12); }
 </style>
 </head>
 
@@ -705,7 +747,12 @@ ul.right-align li { color: white; }
       </div>
 
       <a href="wellness.html" class="backToApp">← Back</a>
-
+<br><br>
+      <!-- ADDED: minimal, visible Privacy link (no other layout changes) -->
+      <div class="legal-footer" role="contentinfo">
+        View our <a href="privacy.html" rel="noopener">Privacy Policy</a>.
+      </div>
+  
       <footer class="bottom-nav">
         <a href="index.html" class="nav-icon">🏠<span>Home</span></a>
         <a href="toolkit-hub.html" class="nav-icon">🧰<span>Toolkit</span></a>
@@ -714,6 +761,7 @@ ul.right-align li { color: white; }
         <a href="important-numbers.html" class="nav-icon">🆘<span>Help</span></a>
       </footer>
 
+      <!-- ================== page script ================= -->
       <script type="module">
         import { auth, db } from "./firebase-init.js";
         import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -723,8 +771,36 @@ ul.right-align li { color: white; }
           getDocFromCache
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-        // ---------- DOM ----------
-        const $ = (id) => document.getElementById(id);
+        /* ========== Tiny toast (shared look) ========== */
+        function ensureToastUI() {
+          if (!document.getElementById("toast-style")) {
+            const s = document.createElement("style"); s.id = "toast-style";
+            s.textContent = `
+                  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(16px);
+                    min-width:240px;max-width:92vw;padding:12px 16px;border-radius:12px;background:rgba(0,0,0,.85);
+                    color:#fff;font-weight:600;font-size:14px;line-height:1.35;box-shadow:0 6px 20px rgba(0,0,0,.25);
+                    opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;z-index:9999}
+                  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+                  .toast .small{display:block;font-weight:500;opacity:.85;margin-top:4px}`;
+            document.head.appendChild(s);
+          }
+          if (!document.getElementById("appToast")) {
+            const d = document.createElement("div");
+            d.id = "appToast"; d.className = "toast"; d.role = "status"; d.setAttribute("aria-live", "polite");
+            document.body.appendChild(d);
+          }
+        }
+        function showToast(msg, sub = "") {
+          ensureToastUI();
+          const el = document.getElementById("appToast");
+          el.innerHTML = sub ? `${msg}<span class="small">${sub}</span>` : msg;
+          el.classList.add("show");
+          clearTimeout(showToast._t);
+          showToast._t = setTimeout(() => el.classList.remove("show"), 2400);
+        }
+
+        /* ========== DOM ========== */
+        const $ = id => document.getElementById(id);
         const statusEl = $("state");
         const updatedEl = $("updated");
         const letterEl = $("letterInput");
@@ -733,110 +809,193 @@ ul.right-align li { color: white; }
         const saveBtn = $("saveBtn");
         const delBtn = $("deleteBtn");
 
+        /* ========== State ========== */
         let ref = null;
+        let uid = null;
+        const PENDING_KEY = "letter:pending"; // {text, uid, ts}
 
-        onAuthStateChanged(auth, async (u) => {
-          if (!u) { location.href = "login.html?next=letter.html"; return; }
-          ref = doc(db, "users", u.uid, "private", "letter");
-
-          await load();           // load existing and render
-
-          // cache-first theme
-          try {
-            const uref = doc(db, "users", u.uid);
-            const cached = await getDocFromCache(uref).catch(() => null);
-            const snap = cached?.exists() ? cached : await getDoc(uref);
-            swapTheme(snap?.exists() ? (snap.data().themeClass || "theme-original") : "theme-original");
-          } catch { }
-        });
-
+        /* ========== Theme helpers ========== */
         function swapTheme(cls) {
           const root = document.documentElement;
           [...root.classList].forEach(c => { if (c.startsWith("theme-")) root.classList.remove(c); });
           root.classList.add(cls || "theme-original");
         }
 
-        function renderLetter() {
-          const text = (letterEl.value || "").trim();
-          outEl.textContent = text;
-          outWrap.style.display = text ? "block" : "none";
+        function renderLetterPreview(text) {
+          const t = (text || "").trim();
+          outEl.textContent = t;
+          outWrap.style.display = t ? "block" : "none";
         }
 
+        /* ========== Strong online test (cross-origin probe) ========== */
+        async function isReallyOnline(timeoutMs = 2500) {
+          if (!navigator.onLine) return false;
+          const url = `https://clients3.google.com/generate_204?ts=${Date.now()}`;
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), timeoutMs);
+            await fetch(url, { mode: "no-cors", cache: "no-store", signal: ctrl.signal });
+            clearTimeout(t);
+            return true; // fetch layer worked → online
+          } catch {
+            return false;
+          }
+        }
+
+        /* ========== Load existing letter (cache-first) ========== */
         async function load() {
           statusEl.textContent = "Loading…";
           try {
-            const s = await getDoc(ref);
+            let s = await getDocFromCache(ref).catch(() => null);
+            if (!s || !s.exists()) s = await getDoc(ref);
+
             if (s.exists()) {
               const d = s.data() || {};
-              // keep input empty until the user types
-              letterEl.value = "";
-
-              // render saved copy below
-              outEl.textContent = d.text || "";
-              outWrap.style.display = d.text ? "block" : "none";
-
+              letterEl.value = "";                 // keep input empty
+              renderLetterPreview(d.text || "");   // show only last saved server copy
               updatedEl.textContent =
                 d.updatedAt instanceof Timestamp ? "Updated: " + d.updatedAt.toDate().toLocaleString() : "";
             } else {
               letterEl.value = "";
-              outEl.textContent = "";
-              outWrap.style.display = "none";
+              renderLetterPreview("");
               updatedEl.textContent = "";
             }
+
+            // If there’s a pending local draft, *do not* render it into the display.
+            // Just inform the user that it will sync when online.
+            try {
+              const pending = JSON.parse(localStorage.getItem(PENDING_KEY) || "null");
+              if (pending && pending.uid === uid && pending.text) {
+                statusEl.textContent = "Pending — will save when online";
+              } else {
+                statusEl.textContent = "";
+              }
+            } catch { statusEl.textContent = ""; }
+
+          } catch {
             statusEl.textContent = "";
-          } catch (e) {
-            alert("Load failed: " + (e.message || e));
-            statusEl.textContent = "Load error";
           }
         }
 
+        /* ========== Save / Delete ========== */
         async function saveLetter() {
-          statusEl.textContent = "Saving…";
           const text = (letterEl.value || "").trim();
-          try {
-            await setDoc(ref, { text, updatedAt: serverTimestamp() }, { merge: true });
+          if (!text) { letterEl.focus(); return; }
 
-            // show saved text below
-            outEl.textContent = text;
-            outWrap.style.display = text ? "block" : "none";
+          statusEl.textContent = "Saving…";
 
-            // clear the input
-            letterEl.value = "";
-
-            // refresh timestamp only (optional)
+          if (await isReallyOnline()) {
             try {
-              const snap = await getDoc(ref);
-              const ts = snap.get("updatedAt");
-              updatedEl.textContent = ts ? "Updated: " + ts.toDate().toLocaleString() : "";
+              await setDoc(ref, { text, updatedAt: serverTimestamp() }, { merge: true });
+              // Now that it’s truly saved to cloud, show it in the display
+              renderLetterPreview(text);
+              letterEl.value = "";
+              statusEl.textContent = "Saved ✓";
+              showToast("Saved");
+              // refresh timestamp from server (best effort)
+              try {
+                const snap = await getDoc(ref);
+                const ts = snap.get("updatedAt");
+                updatedEl.textContent = ts ? "Updated: " + ts.toDate().toLocaleString() : "";
+              } catch { }
+              try { localStorage.removeItem(PENDING_KEY); } catch { }
+            } catch (e) {
+              statusEl.textContent = "Save error";
+              showToast("Couldn’t save", "Please try again.");
+            }
+          } else {
+            // Offline path: keep a pending draft locally, DO NOT render into display
+            try {
+              localStorage.setItem(PENDING_KEY, JSON.stringify({ text, uid, ts: Date.now() }));
             } catch { }
-            statusEl.textContent = "Saved ✓";
-          } catch (e) {
-            alert("Save failed: " + (e.message || e));
-            statusEl.textContent = "Save error";
+            statusEl.textContent = "Pending — will save when online";
+            showToast("Will save when online", "We’ll sync this once you reconnect.");
+            // Do not change the display; only clear the input for a clean feel
+            letterEl.value = "";
           }
         }
 
         async function deleteLetter() {
           if (!confirm("Delete your letter?")) return;
           statusEl.textContent = "Deleting…";
+          if (!(await isReallyOnline())) {
+            showToast("You’re offline", "Reconnect to delete from the cloud.");
+            statusEl.textContent = "Offline — not deleted";
+            return;
+          }
           try {
             await deleteDoc(ref);
             letterEl.value = "";
-            renderLetter(); // hides container
+            renderLetterPreview("");
             updatedEl.textContent = "";
             statusEl.textContent = "Deleted ✓";
+            try { localStorage.removeItem(PENDING_KEY); } catch { }
           } catch (e) {
             alert("Delete failed: " + (e.message || e));
             statusEl.textContent = "Delete error";
           }
         }
 
-        // events
+        /* ========== Pending upload on reconnect (only then render) ========== */
+        let _uploadingPending = false;
+        async function tryUploadPending() {
+          if (_uploadingPending) return;
+          let pending = null;
+          try { pending = JSON.parse(localStorage.getItem(PENDING_KEY) || "null"); } catch { }
+          if (!pending || pending.uid !== uid || !pending.text) return;
+          if (!(await isReallyOnline())) return;
+
+          _uploadingPending = true;
+          try {
+            await setDoc(ref, { text: pending.text, updatedAt: serverTimestamp() }, { merge: true });
+            localStorage.removeItem(PENDING_KEY);
+            showToast("All set", "Your pending letter has synced.");
+            statusEl.textContent = "Saved ✓";
+            // Now render the freshly saved server version
+            renderLetterPreview(pending.text);
+            try {
+              const snap = await getDoc(ref);
+              const ts = snap.get("updatedAt");
+              updatedEl.textContent = ts ? "Updated: " + ts.toDate().toLocaleString() : "";
+            } catch { }
+          } catch {
+            // keep pending; will retry next online
+          } finally {
+            _uploadingPending = false;
+          }
+        }
+
+        /* ========== Auth + boot ========== */
+        onAuthStateChanged(auth, async (user) => {
+          if (!user) { location.href = "login.html?next=letter.html"; return; }
+          uid = user.uid;
+          ref = doc(db, "users", uid, "private", "letter");
+
+          await load();
+
+          // cache-first theme
+          try {
+            const uref = doc(db, "users", uid);
+            const cached = await getDocFromCache(uref).catch(() => null);
+            const snap = cached?.exists() ? cached : await getDoc(uref);
+            swapTheme(snap?.exists() ? (snap.data().themeClass || "theme-original") : "theme-original");
+          } catch { }
+
+          // Upload pending only if we truly are online at boot
+          try { if (await isReallyOnline()) await tryUploadPending(); } catch { }
+        });
+
+        /* ========== Events ========== */
         saveBtn?.addEventListener("click", saveLetter);
         delBtn?.addEventListener("click", deleteLetter);
-      
-      </script>      
 
+        // On reconnect, upload pending once (then it will appear)
+        window.addEventListener("online", async () => {
+          showToast("Back online", "Syncing any pending items…");
+          await tryUploadPending();
+        });
+      </script>
+                                          
 </body>
 
 </html>

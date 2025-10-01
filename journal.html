@@ -2,6 +2,40 @@
 <html lang="en" data-ready="0">
 
 <head>
+  <!-- 0) AUTH GUARD — FIRST in <head> on PROTECTED pages -->
+  <script>
+    (function () {
+      const PUBLIC_PAGES = ["index.html", "important-numbers.html", "privacy.html", "login.html", "register.html"];
+      const path = location.pathname.split("/").pop() || "index.html";
+      if (PUBLIC_PAGES.includes(path)) return; // no-op on public pages
+
+      // Hide immediately to avoid UI flash on protected pages
+      document.documentElement.style.visibility = "hidden";
+
+      const goLogin = () => {
+        location.href = "login.html?next=" + encodeURIComponent(location.href);
+      };
+
+      // Try Firebase; fall back to a temporary session flag if needed
+      (async () => {
+        try {
+          const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+          const { auth } = await import("./firebase-init.js");
+          onAuthStateChanged(auth, (user) => {
+            if (!user) return goLogin();
+            document.documentElement.style.visibility = "";
+            document.documentElement.setAttribute("data-ready", "1");
+          });
+        } catch (e) {
+          const authed = sessionStorage.getItem("fs_logged_in") === "1"; // temporary fallback
+          if (!authed) return goLogin();
+          document.documentElement.style.visibility = "";
+          document.documentElement.setAttribute("data-ready", "1");
+        }
+      })();
+    })();
+  </script>
+  
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>3-Sides Planner — JOURNAL</title>
@@ -9,6 +43,11 @@
   <!-- Require login for this page (auth.js will handle redirect) -->
   <meta name="auth" content="required">
 
+  <!-- At the top of delete-account.html <body> or in <head> -->
+  <script type="module">
+    import './firebase-init.js'; // ensures app/auth/db are initialized
+  </script>
+    
   <!-- 1) FOUC guard -->
   <style>
     html:not([data-ready="1"]) {
@@ -29,15 +68,15 @@
 
   <!-- PWA + will be kept in sync with your theme by JS -->
   <!-- Absolute (good for GitHub Pages) -->
-  <link rel="manifest" href="manifest.webmanifest?v=27">
+  <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#6a5acd">
   <meta name="color-scheme" content="dark light">
   
   <!-- Favicons -->
-  <link rel="icon" type="image/svg+xml" sizes="any" href="/three-sides.io/favicon.svg">
-  <link rel="icon" type="image/png" sizes="32x32" href="/three-sides.io/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/three-sides.io/favicon-16.png">
-  <link rel="apple-touch-icon" href="/three-sides.io/icon-192.png"> <!-- iOS Home screen -->
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/3-sides-planner.io/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/3-sides-planner.io/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/3-sides-planner.io/favicon-16.png">
+  <link rel="apple-touch-icon" href="/3-sides-planner.io/icon-192.png"> <!-- iOS Home screen -->
   
   <!-- Fonts & CSS (non-blocking) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -143,7 +182,6 @@
       color: white !important;
       padding: 2rem 2.5rem 0rem 1rem !important;
       /* Add more right padding */
-
     }
 
     /* sparkle */
@@ -454,7 +492,6 @@
       width: 100%;
       padding: 4rem .5rem;
       box-sizing: border-box;
-
     }
 
     /* Entry container */
@@ -576,6 +613,17 @@ select:-webkit-autofill {
   transition: background-color 9999s ease-in-out 0s; /* suppress flash */
 }
 
+/* ================= register css add ons ================ */
+  .legal-footer {
+    text-align: center;
+    font-size: 0.9rem;
+    margin-top: 8px;
+    color: var(--text-color) !important; /* NEW: match theme text color */
+  }
+  .legal-footer a {
+    color: inherit;                 /* NEW: use same color as parent */
+    text-decoration: underline;
+  }
   </style>
 </head>
 
@@ -590,8 +638,15 @@ select:-webkit-autofill {
 
     <div class="entry-list" id="journalEntries"></div>
     <div class="feel-good-container">
-      <textarea id="journalEntry" placeholder="Write your thoughts here..."></textarea>
-      <button onclick="saveJournalEntry()" class="icon-button">💾 Save</button>
+      <textarea id="journalEntry" placeholder="Write your thoughts here..."></textarea>  
+
+      <div id="petUnlockedMsg" style="display:none;margin-top:8px;font-weight:700;">
+        Nice journaling! You can feed your pet today 🐾
+      </div>
+      
+ <br>
+      
+      <button id="saveBtn" onclick="saveJournalEntry()" class="icon-button">💾 Save</button>
       <a href="pet.html"><button class="icon-button">🐾 My Pet</button></a>
       <br><br><br>
     </div>
@@ -607,6 +662,11 @@ select:-webkit-autofill {
     <div style="text-align: center; margin-top: 1rem; margin-bottom: 3rem;">
       <a href="toolkit-hub.html" class="backToApp"
         style="color: var(--text-color); font-weight: bold; font-size: 1.2rem;">← Back</a>
+    </div>
+
+    <!-- ADDED: minimal, visible Privacy link (no other layout changes) -->
+    <div class="legal-footer" role="contentinfo">
+      View our <a href="privacy.html" rel="noopener">Privacy Policy</a>.
     </div>
 
     <footer class="bottom-nav">
@@ -625,6 +685,39 @@ select:-webkit-autofill {
         doc, onSnapshot, collection, addDoc, deleteDoc, getDoc, setDoc,
         query, orderBy, serverTimestamp, increment
       } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+      /* ---------- Tiny toast UI (same as toolkit.html) ---------- */ // ⬅️ NEW
+      function ensureToastUI() {
+        if (!document.getElementById("toast-style")) {
+          const s = document.createElement("style");
+          s.id = "toast-style";
+          s.textContent = `
+                .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(16px);
+                  min-width:240px;max-width:92vw;padding:12px 16px;border-radius:12px;background:rgba(0,0,0,.85);
+                  color:#fff;font-weight:600;font-size:14px;line-height:1.35;box-shadow:0 6px 20px rgba(0,0,0,.25);
+                  opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;z-index:9999}
+                .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+                .toast .small{display:block;font-weight:500;opacity:.85;margin-top:4px}`;
+          document.head.appendChild(s);
+        }
+        if (!document.getElementById("appToast")) {
+          const d = document.createElement("div");
+          d.id = "appToast";
+          d.className = "toast";
+          d.role = "status";
+          d.setAttribute("aria-live", "polite");
+          document.body.appendChild(d);
+        }
+      }
+      function showToast(msg, sub = "") {
+        ensureToastUI();
+        const el = document.getElementById("appToast");
+        el.innerHTML = sub ? `${msg}<span class="small">${sub}</span>` : msg;
+        el.classList.add("show");
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(() => el.classList.remove("show"), 2400);
+      }
+      let hasQueuedSinceLastSync = false; // ⬅️ NEW
 
       // ---------- fast reveal + theme ----------
       const reveal = () => (document.documentElement.style.visibility = "visible");
@@ -647,13 +740,15 @@ select:-webkit-autofill {
       // ---------- DOM ----------
       const txt = document.getElementById("journalEntry");
       const list = document.getElementById("entryList");
+      const saveBtn = document.getElementById("saveBtn");
+      const banner = document.getElementById("petUnlockedMsg");
       const esc = (s = "") => s
         .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 
       let uid = null, unsubTheme = null, unsubEntries = null;
 
-      // ---------- badges ----------
+      // ---------- BADGES / PET FLAGS ----------
       async function ensureBadge(userId, id, label, emoji) {
         const bRef = doc(db, "users", userId, "badges", id);
         if (!(await getDoc(bRef)).exists()) {
@@ -661,7 +756,6 @@ select:-webkit-autofill {
         }
       }
 
-      // ---------- helper: unlock feeding only when appropriate ----------
       async function flagCanFeedToday(userId) {
         const petRef = doc(db, "users", userId, "pet", "state");
         const today = ymdLocal();
@@ -669,21 +763,92 @@ select:-webkit-autofill {
         const snap = await getDoc(petRef);
         const d = snap.exists() ? snap.data() : {};
 
-        // If they already fed today, or the token already exists for today, do nothing.
         if ((d.lastFedYMD || "") === today) return false;
         if ((d.canFeedYMD || "") === today) return false;
 
         await setDoc(petRef, { canFeedYMD: today, journalCount: increment(1) }, { merge: true });
 
-        // First-ever journal badge (safe if it already exists)
-        try {
-          const bRef = doc(db, "users", userId, "badges", "firstJournal");
-          if (!(await getDoc(bRef)).exists()) {
-            await setDoc(bRef, { key: "firstJournal", label: "First Journal", emoji: "📝", earnedAt: serverTimestamp() });
-          }
-        } catch { }
+        try { await ensureBadge(userId, "firstJournal", "First Journal", "📝"); } catch { }
+        return true;
+      }
 
-        return true; // unlocked feeding for today for the first time
+      // ---------- OUTBOX (IndexedDB) ----------
+      const DB_NAME = "three-sides-outbox";
+      const STORE = "outbox";
+      function openDB() {
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(DB_NAME, 1);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      }
+      async function idb(mode, fn) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE, mode);
+          const store = tx.objectStore(STORE);
+          const out = fn(store);
+          tx.oncomplete = () => resolve(out);
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+      const Outbox = {
+        async put(item) { return idb("readwrite", s => s.put(item)); },
+        async del(id) { return idb("readwrite", s => s.delete(id)); },
+        async list() {
+          return idb("readonly", s => new Promise(res => {
+            const items = [];
+            s.openCursor().onsuccess = e => {
+              const c = e.target.result;
+              if (c) { items.push(c.value); c.continue(); } else { res(items); }
+            };
+          }));
+        },
+      };
+
+      async function uploadQueuedItem(item) {
+        if (!uid) throw new Error("No user");
+        await addDoc(collection(db, "users", uid, "journal"), {
+          text: item.text,
+          createdAt: serverTimestamp()
+        });
+        try {
+          const unlocked = await flagCanFeedToday(uid);
+          if (unlocked && banner) {
+            banner.textContent = "Nice journaling! You can feed your pet today 🐾";
+            banner.style.display = "block";
+          }
+        } catch (e) {
+          console.warn("[journal] flagCanFeedToday failed", e);
+        }
+      }
+
+      async function flushOutbox() {
+        const items = await Outbox.list();
+        if (!items.length) return;
+        if (!navigator.onLine) return;
+
+        for (const item of items) {
+          try {
+            await uploadQueuedItem(item);
+            await Outbox.del(item.id);
+          } catch (e) {
+            console.warn("[journal] flush item failed", item.id, e);
+          }
+        }
+      }
+
+      async function requestBackgroundSync() {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          if ("sync" in reg) await reg.sync.register("outbox-sync");
+        } catch (e) {
+          /* fallbacks handle it */
+        }
       }
 
       // ---------- actions ----------
@@ -696,32 +861,40 @@ select:-webkit-autofill {
         if (!uid) { location.replace("login.html?next=journal.html"); return; }
         if (!text) { txt?.focus(); return; }
 
-        const saveBtn = document.getElementById("saveBtn"); // optional id
         saving = true;
         saveBtn?.setAttribute("disabled", "disabled");
 
-        try {
-          await addDoc(collection(db, "users", uid, "journal"), {
-            text,
-            createdAt: serverTimestamp()
-          });
-          txt.value = "";
-
-          let unlockedNow = false;
-          try { unlockedNow = await flagCanFeedToday(uid); } catch (e) { console.warn("flagCanFeedToday:", e); }
-
-          const banner = document.getElementById("petUnlockedMsg"); // optional banner element
-          if (unlockedNow) {
-            if (banner) {
-              banner.textContent = "Nice journaling! You can feed your pet today 🐾";
-              banner.style.display = "block";
-            } else {
-              alert("Nice journaling! You can feed your pet today 🐾");
+        // Try direct write when online
+        if (navigator.onLine) {
+          try {
+            await addDoc(collection(db, "users", uid, "journal"), { text, createdAt: serverTimestamp() });
+            txt.value = "";
+            let unlockedNow = false;
+            try { unlockedNow = await flagCanFeedToday(uid); } catch (e) { console.warn("flagCanFeedToday:", e); }
+            if (unlockedNow) {
+              if (banner) { banner.textContent = "Nice journaling! You can feed your pet today 🐾"; banner.style.display = "block"; }
+              else { alert("Nice journaling! You can feed your pet today 🐾"); }
             }
+            showToast("Saved"); // ⬅️ NEW
+            saving = false;
+            saveBtn?.removeAttribute("disabled");
+            return;
+          } catch (e) {
+            console.warn("[journal] direct add failed; queueing", e);
           }
+        }
+
+        // Queue when offline (or network error)
+        try {
+          const item = { id: `note-${Date.now()}`, text, ts: Date.now() };
+          await Outbox.put(item);
+          txt.value = "";
+          await requestBackgroundSync();
+          hasQueuedSinceLastSync = true;                  // ⬅️ NEW
+          showToast("Saved offline — will sync", "You can close the app anytime."); // ⬅️ NEW
         } catch (e) {
-          console.error("[journal] add error:", e);
-          alert("Sorry, couldn’t save. Please try again.");
+          console.error("[journal] queue failed", e);
+          alert("Sorry, couldn’t save right now. Please try again.");
         } finally {
           saving = false;
           saveBtn?.removeAttribute("disabled");
@@ -776,9 +949,34 @@ select:-webkit-autofill {
 
         const q = query(collection(db, "users", uid, "journal"), orderBy("createdAt", "desc"));
         unsubEntries = onSnapshot(q, renderEntries, (err) => console.error("[journal] list error:", err));
-      });
-    </script>
 
+        // Try flushing queued entries as soon as we know the user
+        flushOutbox();
+      });
+
+      // ---------- SW / Connectivity hooks ----------
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.addEventListener("message", async (ev) => {
+          if (ev.data && ev.data.type === "SYNC_OUTBOX") {
+            await flushOutbox();
+            if (hasQueuedSinceLastSync) {                   // ⬅️ NEW
+              showToast("All set", "Your offline items have synced."); // ⬅️ NEW
+              hasQueuedSinceLastSync = false;               // ⬅️ NEW
+            }
+          }
+        });
+      }
+      window.addEventListener("online", async () => {        // ⬅️ NEW
+        showToast("Back online", "Syncing any saved entries…");
+        await flushOutbox();
+        if (hasQueuedSinceLastSync) {
+          showToast("All set", "Your offline items have synced.");
+          hasQueuedSinceLastSync = false;
+        }
+      });
+      window.addEventListener("focus", flushOutbox);
+    </script>
+     
   </body>
 
 </html>
